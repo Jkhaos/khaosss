@@ -1,0 +1,119 @@
+#!/bin/bash
+
+## A script to install Funtoo Linux on a computer.
+
+####---------------------------------------------####
+echo We will now start installing Funtoo Linux on this computer!
+
+echo We will start by partitioning the hard disk.
+cfdisk
+
+echo Now, we will create the filesystems.
+echo Please enter the root partition. Eg. /dev/sda?
+read rootpartition
+mkfs.reiserfs $rootpartition
+# echo Please enter the swap partition. Eg. /dev/sda?
+# read swap-partition
+# mkswap $swap-partition
+# swapon $swap-partition
+
+echo It is time to mount the filesystems.
+mkdir /mnt/funtoo
+mount $rootpartition /mnt/funtoo
+
+cd /mnt/funtoo
+echo Now, we will download the stage 3 file.
+wget http://build.funtoo.org/funtoo-current/x86-64bit/core2_64/stage3-latest.tar.xz
+
+echo We will extract the downloaded file.
+tar xJpf stage3-latest.tar.xz
+
+echo It is time to chroot into Funtoo linux.
+mount --bind /proc proc
+mount --bind /dev dev
+cp /etc/resolv.conf etc
+env -i HOME=/root TERM=$TERM chroot . bash -l
+export PS1="(chroot) $PS1"
+
+echo Downloading the portage tree...
+emerge --sync
+
+echo Time to configure the system.
+nano -w /etc/fstab
+ln -sf /usr/share/zoneinfo/America/Cuiaba /etc/localtime
+nano -w /etc/portage/make.conf 
+nano -w /etc/conf.d/hwclock
+eselect profile replace 7 8
+nano -w /etc/conf.d/hostname
+
+echo Installing a bootloader...
+emerge boot-update
+nano -w /etc/boot.conf
+grub-install --no-floppy /dev/sda
+boot-update
+
+echo Configure the network...
+rc-update add dhcpcd default
+
+echo Time to set the root password.
+passwd
+
+echo We will make sure the system time is accurate.
+emerge chrony
+rc-update add chronyd default
+
+echo server time.apple.com >  /etc/chrony/chrony.conf
+echo maxupdateskew 100 >>  /etc/chrony/chrony.conf
+echo driftfile /etc/chrony/chrony.drift >> /etc/chrony/chrony.conf
+echo keyfile /etc/chrony/chrony.keys >> /etc/chrony/chrony.conf
+echo commandkey 1 >> /etc/chrony/chrony.conf
+echo dumponexit >> /etc/chrony/chrony.conf
+echo dumpdir /var/log/chrony >> /etc/chrony/chrony.conf
+echo initstepslew 10 time.apple.com >> /etc/chrony/chrony.conf
+echo logdir /var/log/chrony >> /etc/chrony/chrony.conf
+echo log measurements statistics tracking >> /etc/chrony/chrony.conf
+echo logchange 0.5 >> /etc/chrony/chrony.conf
+echo mailonchange lessonunlimited@gmail.com 0.5 >> /etc/chrony/chrony.conf
+echo rtcfile /etc/chrony/chrony.rtc >> /etc/chrony/chrony.conf
+echo rtconutc >> /etc/chrony/chrony.conf
+echo sched_priority 1 >> /etc/chrony/chrony.conf
+echo lock_all >> /etc/chrony/chrony.conf
+
+echo rc_need=dhcpcd >> /etc/conf.d/chronyd
+
+echo Time to update the system.
+emerge --sync
+emerge -auDNV world
+
+echo We will now install useful apps.
+emerge metalog
+rc-update add metalog default
+emerge fcron
+rc-update add fcron default
+emerge sudo glances
+visudo
+
+echo Time to add a normal user.
+echo Enter your username.
+read username
+useradd -m -g users -G audio,video,cdrom,wheel $username
+echo Enter your password.
+passwd $username
+
+echo We will now install a graphical environment.
+echo 'Do you have a pointing device? Enter Y/N.'
+read answer
+
+if [[ $answer == "Y" || $answer == "y" ]]
+then 
+	echo So you have a pointing device.
+	echo 'VIDEO_CARDS="intel"' >> /etc/portage/make.conf
+	echo 'INPUT_DEVICES="evdev synaptics"' >> /etc/portage/make.conf
+else
+	echo So you did not have a pointing device.
+	echo 'VIDEO_CARDS="intel"' >> /etc/portage/make.conf
+	echo 'INPUT_DEVICES="evdev"' >> /etc/portage/make.conf
+fi
+
+emerge xorg-x11
+
